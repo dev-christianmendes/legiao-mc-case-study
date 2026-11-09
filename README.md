@@ -3,6 +3,8 @@
 > **Estudo de caso.** Código-fonte privado; demonstração disponível mediante solicitação.
 > Todas as telas abaixo foram capturadas numa instância **local**, com dados **fictícios** (nomes "Demo/Exemplo/Fictício", registros `[MOCK]`). A marca do clube foi substituída por um marcador neutro ("LOGO").
 
+![Fluxo do administrador: login, agenda, membros, mural da hierarquia, solicitações de ingresso, financeiro e auditoria](assets/demo.gif)
+
 Sistema web, em produção, que um motoclube usa para administrar o dia a dia: ingresso de novos membros, hierarquia, motocicletas, mensalidade, caixa, rotas, eventos, feedback entre membros e auditoria. Funciona no computador e no celular.
 
 | | |
@@ -36,8 +38,8 @@ Uma SPA em React que conversa diretamente com o Supabase. **Toda regra de acesso
 | --- | --- | --- |
 | **Visitante** | sem conta | login, cadastro público de ingresso, recuperação de senha e estatuto (PDF) |
 | **Solicitante** | conta criada, solicitação ainda não aprovada | só acompanha a própria solicitação e corrige dados quando a administração pede |
-| **Membro** | membro ativo vinculado à conta | consulta agenda, membros, mural da hierarquia, garagem, rotas, eventos e o financeiro (somente leitura, com adimplência agregada); envia o próprio comprovante de mensalidade; dá e recebe feedback anônimo; ativa 2FA |
-| **Administrador** | papel `ADMIN` **ou** titular de um cargo do Comando | tudo acima, mais: análise e aprovação de solicitações (a aprovação cria membro, moto, vínculo de conta e copia as fotos), fichas e cargos, concessão/retirada de acesso de administrador (nunca o próprio), validação de comprovantes, lançamentos financeiros, exportação CSV, relatório financeiro em PDF, cadastro de rotas e eventos, auditoria e moderação do feedback |
+| **Membro** | membro ativo vinculado à conta | consulta agenda, membros, mural da hierarquia, garagem, rotas, eventos e o financeiro (somente leitura, com adimplência agregada); edita a própria ficha (foto, contato, endereço) e as motos da própria garagem, com os campos da administração recusados pelo banco; envia o próprio comprovante de mensalidade; dá e recebe feedback anônimo; ativa 2FA |
+| **Administrador** | papel `ADMIN` **ou** titular de um cargo do Comando | tudo acima, mais: análise e aprovação de solicitações (a aprovação cria membro, moto, vínculo de conta e copia as fotos), fichas e cargos, concessão/retirada de acesso de administrador (nunca o próprio), validação de comprovantes, lançamentos financeiros, exportação CSV, relatório financeiro em PDF, cadastro de rotas e eventos com mudança de status direto na página, auditoria, feedbacks recebidos e enviados por membro e moderação do feedback |
 
 **Hierarquia implementada** (tabela de cargos): Comando — Diretor, Sgt. de Armas, Disciplina, Secretário, Tesoureiro (um titular ativo por cargo; o titular é administrador pelo cargo) › Full Patch — Escudado › PP — Próspero (cargo de entrada).
 
@@ -45,7 +47,7 @@ Outros destaques:
 - **Cadastro com fotos de celular**: HEIC/HEIF de iPhone e Android convertidos e comprimidos no navegador antes do envio (fotos de até 25 MB, normalmente reduzidas a menos de 300 KB); máscaras e validação de CPF (dígito verificador) e telefone.
 - **Feedback anônimo** entre membros: resultados só aparecem a partir de 3 avaliadores; comentários podem ser contestados e moderados.
 - **Financeiro analítico**: saldo em caixa, período comparado ao anterior, evolução de 12 meses em gráficos SVG próprios, categorias e adimplência.
-- **Mapa** com Leaflet/OpenStreetMap e busca de endereço pelo Nominatim (respeitando o limite de 1 requisição/s).
+- **Mapa** com Leaflet/OpenStreetMap e busca de endereço pelo Nominatim (respeitando o limite de 1 requisição/s). Rotas traçadas pelas estradas (OSRM), com distância e duração preenchidas no formulário e atalhos para Google Maps e Waze.
 
 ## Arquitetura
 
@@ -83,7 +85,7 @@ flowchart LR
 
 - Acesso a dados só por uma camada de *services* por domínio, consumida por *hooks* do React Query; listas grandes usam paginação explícita porque a API devolve no máximo 200 linhas por requisição.
 - Validação em dois lugares: Zod no formulário (experiência) e constraints/triggers/RLS no banco (segurança de fato).
-- Migrations versionadas (31) aplicadas em ordem; cada PR descreve a ordem de publicação entre migration e front.
+- Migrations versionadas (33) aplicadas em ordem; cada PR descreve a ordem de publicação entre migration e front.
 
 ### Modelo de dados (visão geral)
 
@@ -130,7 +132,7 @@ Tabelas de configuração: `dues_settings` (valor e vencimento), `security_setti
 
 ```text
 HTTP/2 200
-content-security-policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com; worker-src 'self' blob:; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://<projeto>.supabase.co; connect-src 'self' https://<projeto>.supabase.co https://nominatim.openstreetmap.org; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+content-security-policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com; worker-src 'self' blob:; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://<projeto>.supabase.co; connect-src 'self' https://<projeto>.supabase.co https://nominatim.openstreetmap.org https://router.project-osrm.org; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
 cross-origin-opener-policy: same-origin
 permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
 referrer-policy: strict-origin-when-cross-origin
@@ -141,15 +143,15 @@ x-frame-options: DENY
 
 ## Qualidade
 
-- **142 testes unitários** (Vitest, 21 arquivos, todos passando): regras de mensalidade, finanças e relatório, análise financeira, máscaras e CPF, política de senha, compressão de imagens/HEIC, paginação, geocodificação, schemas de formulário e autenticação.
-- **83 execuções E2E** (Playwright, 9 arquivos; 69 no desktop + 14 num celular emulado) contra um Supabase local com confirmação de e-mail, captcha e limite de 200 linhas, como produção. Cobrem cadastro com anexos e aprovação, navegação somente leitura do membro, autenticação, ciclo de 2FA e logout por inatividade, mensalidade, CRUD administrativo, financeiro (inclusive período com 1050 lançamentos) e **ataques diretos à API** (Auth sem captcha, gravação anônima, solicitação forjada, anexos não declarados, freio por hora, CPF inválido, retenção). A suíte se recusa a rodar contra um Supabase que não seja local, e um modo dedicado reprova qualquer recurso bloqueado pelo CSP.
+- **164 testes unitários** (Vitest, 24 arquivos, todos passando): regras de mensalidade, finanças e relatório, análise financeira, máscaras e CPF, política de senha, compressão de imagens/HEIC, paginação, geocodificação, schemas de formulário e autenticação.
+- **111 execuções E2E** (Playwright, 11 arquivos; 88 no desktop + 23 num celular emulado) contra um Supabase local com confirmação de e-mail, captcha e limite de 200 linhas, como produção. Cobrem cadastro com anexos e aprovação, navegação somente leitura do membro, edição da própria ficha e da própria garagem (inclusive recusas pela API), autenticação, ciclo de 2FA e logout por inatividade, mensalidade, CRUD administrativo, financeiro (inclusive período com 1050 lançamentos) e **ataques diretos à API** (Auth sem captcha, gravação anônima, solicitação forjada, anexos não declarados, freio por hora, CPF inválido, retenção). A suíte se recusa a rodar contra um Supabase que não seja local, e um modo dedicado reprova qualquer recurso bloqueado pelo CSP.
 - **CI (GitHub Actions)** em todo PR e push no `main`, com 4 jobs:
   1. Dependências, lint, testes e build (`npm audit`, ESLint, Vitest, TypeScript strict + build);
   2. Migrations e lint do banco (todas as migrations num banco novo + `supabase db lint`);
   3. Segredos no repositório (gitleaks no histórico);
   4. Ponta a ponta sob o CSP de produção (somente em PRs).
 - **Dependabot** semanal para npm e GitHub Actions (minor/patch agrupados; majors individuais).
-- **Fluxo por PR**: branch → PR com checklist de segurança e seção "Para publicar" → CI verde → merge → deploy automático na Vercel. **25 PRs mesclados** (22 de funcionalidade/correção/documentação e 3 do Dependabot).
+- **Fluxo por PR**: branch → PR com checklist de segurança e seção "Para publicar" → CI verde → merge → deploy automático na Vercel. **33 PRs mesclados** (28 de funcionalidade/correção/documentação e 5 do Dependabot).
 - **Rotinas agendadas**: limpeza diária no banco, manutenção semanal do Storage e revisão mensal de segurança.
 
 ## Stack
@@ -181,7 +183,7 @@ x-frame-options: DENY
 Concepção, desenvolvimento e operação de ponta a ponta, como desenvolvedor único:
 levantamento das regras do clube e do estatuto, modelagem do banco e das policies de RLS, frontend responsivo, estratégia de testes (unitários e E2E, incluindo testes de ataque à API), pipeline de CI, configuração de produção (Supabase, Vercel, SMTP, Turnstile), documentação técnica, guia do usuário e plano de reação a incidentes.
 
-O desenvolvimento usou um assistente de IA (Claude) como par de programação: 41 dos 71 commits registram coautoria. Decisões de produto, de arquitetura e de segurança, revisão e publicação ficaram comigo.
+O desenvolvimento usou um assistente de IA (Claude) como par de programação: 51 dos 91 commits registram coautoria. Decisões de produto, de arquitetura e de segurança, revisão e publicação ficaram comigo.
 
 ## Resultados
 
